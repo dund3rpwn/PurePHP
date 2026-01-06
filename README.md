@@ -9,6 +9,7 @@ PurePHP is designed for environments where process execution (exec, system, pass
 - Gatekeeper Auth: The script remains dormant and invisible to scanners unless triggered by a specific, pre-defined Cookie and POST requirement.
 - Network Stack: Integrated socket-based port scanner, service banner grabber, and HTTP fetcher for internal lateral movement.
 - Throttled DB Extraction: Minimalist MySQL interface designed for schema enumeration and paged data exfiltration to bypass database audit logs.
+- Console History: Export console history to a downloadable text file.
 
 ## Usage
 ### Filesystem
@@ -29,6 +30,8 @@ PurePHP is designed for environments where process execution (exec, system, pass
 - `service_banner [h:p]`
 - `dns [target]`
 - `self_destruct`
+
+<img width="1437" height="408" alt="image" src="https://github.com/user-attachments/assets/6c6a7f4f-bcaa-440b-9291-28378b085977" />
 
 ## OpSec Warning :warning:
 While PurePHP avoids process-based detection, network-based actions (like scan or get) will still trigger syscall events (connect). Always use these functions sparingly in high-security environments.
