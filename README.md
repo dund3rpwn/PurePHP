@@ -34,7 +34,7 @@ PurePHP is designed for environments where process execution (exec, system, pass
 - `self_destruct`
 - `clear`
 
-<img width="1437" height="408" alt="image" src="https://github.com/user-attachments/assets/6c6a7f4f-bcaa-440b-9291-28378b085977" />
+<img width="1906" height="441" alt="image" src="https://github.com/user-attachments/assets/7fcfc085-58bd-4e89-aaa2-1b6596301685" />
 
 ## OpSec Warning :warning:
 While PurePHP avoids process-based detection, network-based actions (like scan or get) will still trigger syscall events (connect). Always use these functions sparingly in high-security environments.
