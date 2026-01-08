@@ -10,26 +10,29 @@ PurePHP is designed for environments where process execution (exec, system, pass
 - Network Stack: Integrated socket-based port scanner, service banner grabber, and HTTP fetcher for internal lateral movement.
 - Throttled DB Extraction: Minimalist MySQL interface designed for schema enumeration and paged data exfiltration to bypass database audit logs.
 - Console History: Export console history to a downloadable text file.
+- Command History: Easily return to previously ran commands.
 
 ## Usage
 ### Filesystem
 - `dir [path]`
 - `stat [path]`
 - `read [file]`
-- `find [path] [key]`
+- `find [path] [keyword]`
 - `download [file]`
 - `upload [path] [b64]`
 ### Database
 - `db_auth [h:p] [u] [p]`
 - `db_list [h:p] [u] [p]`
 - `db_tables [h:p] [u] [p] [db]`
-- `db_query [h:p] [u] [p] [db] [tbl] [pages] [ms]`
+- `db_describe [h:p] [u] [p] [db] [tbl]`
+- `db_query [h:p] [u] [p] [db] [tbl] [cols] [pages] [rows]`
 ### Other
 - `fetch [url]`
 - `port_scan [h:p]`
 - `service_banner [h:p]`
 - `dns [target]`
 - `self_destruct`
+- `clear`
 
 <img width="1437" height="408" alt="image" src="https://github.com/user-attachments/assets/6c6a7f4f-bcaa-440b-9291-28378b085977" />
 
